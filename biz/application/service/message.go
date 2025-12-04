@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/google/wire"
-	"github.com/samber/lo"
 	"github.com/silenceper/wechat/v2/miniprogram/subscribe"
 )
 
@@ -34,21 +33,15 @@ var MessageSet = wire.NewSet(
 func (s *MessageService) SendWechatMessage(ctx context.Context, req *sts.SendWechatMessageReq) (*sts.SendWechatMessageResp, error) {
 	log.Info("SendWechatMessage: 开始发送微信消息, userId=%s, templateId=%s", req.UserId, req.TemplateId)
 
-	// 1. 根据用户ID获取用户信息
 	user, err := s.UserMapper.FindOne(ctx, req.UserId)
 	if err != nil {
 		log.Error("SendWechatMessage: 查找用户失败, userId=%s, err=%v", req.UserId, err)
-		return &sts.SendWechatMessageResp{
-			Success:  false,
-			ErrorMsg: lo.ToPtr("用户不存在"),
-		}, nil
+		return nil, consts.ErrNoSuchUser
 	}
 
-	// 2. 获取用户的微信openid
 	var openId string
 	var appId string
 
-	// 从用户的认证信息中找到微信openid
 	for _, auth := range user.Auth {
 		if auth.Type == consts.AuthTypeWechatOpenId {
 			openId = auth.Value
@@ -59,39 +52,27 @@ func (s *MessageService) SendWechatMessage(ctx context.Context, req *sts.SendWec
 
 	if openId == "" {
 		log.Error("SendWechatMessage: 用户未绑定微信, userId=%s", req.UserId)
-		return &sts.SendWechatMessageResp{
-			Success:  false,
-			ErrorMsg: lo.ToPtr("用户未绑定微信账号"),
-		}, nil
+		return nil, consts.ErrOpenIdNotFind
 	}
 
-	// 3. 获取对应的小程序SDK
 	miniProgram := s.MiniProgramMap[appId]
 	if miniProgram == nil {
 		log.Error("SendWechatMessage: 未找到对应的小程序配置, appId=%s, 可用的appId列表: %v", appId, s.getAvailableAppIds())
-		return &sts.SendWechatMessageResp{
-			Success:  false,
-			ErrorMsg: lo.ToPtr("小程序配置不存在"),
-		}, nil
+		return nil, consts.ErrNotFound
 	}
 
-	log.Info("SendWechatMessage: 找到小程序配置, appId=%s, openId=%s", appId, openId)
-
-	// 4. 构建订阅消息
 	message := &subscribe.Message{
 		ToUser:     openId,
 		TemplateID: req.TemplateId,
 		Data:       make(map[string]*subscribe.DataItem),
 	}
 
-	// 转换模板数据
 	for key, value := range req.TemplateData {
 		message.Data[key] = &subscribe.DataItem{
 			Value: value,
 		}
 	}
 
-	// 设置可选参数
 	if req.Page != nil {
 		message.Page = *req.Page
 	}
@@ -102,25 +83,14 @@ func (s *MessageService) SendWechatMessage(ctx context.Context, req *sts.SendWec
 		message.Lang = *req.Lang
 	}
 
-	// 5. 发送订阅消息
 	err = miniProgram.Send(ctx, message)
 	if err != nil {
 		log.Error("SendWechatMessage: 发送订阅消息失败, openId=%s, templateId=%s, err=%v", openId, req.TemplateId, err)
-
-		// 解析微信错误码，提供更友好的错误信息
-		errorMsg := s.parseWechatError(err.Error())
-
-		return &sts.SendWechatMessageResp{
-			Success:  false,
-			ErrorMsg: lo.ToPtr(errorMsg),
-		}, nil
+		return nil, consts.ErrWrongWechatCode
 	}
 
 	log.Info("SendWechatMessage: 发送订阅消息成功, userId=%s, openId=%s, templateId=%s", req.UserId, openId, req.TemplateId)
-
-	return &sts.SendWechatMessageResp{
-		Success: true,
-	}, nil
+	return nil, nil
 }
 
 // getAvailableAppIds 获取可用的AppID列表，用于调试

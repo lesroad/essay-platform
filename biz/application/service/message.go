@@ -2,21 +2,28 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"essay-platform/biz/application/dto/sts"
 	"essay-platform/biz/infra/config"
 	"essay-platform/biz/infra/consts"
 	"essay-platform/biz/infra/mapper"
 	"essay-platform/biz/infra/sdk/wechat"
+	"essay-platform/biz/infra/util"
 	"essay-platform/biz/infra/util/log"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/google/wire"
 	"github.com/silenceper/wechat/v2/miniprogram/subscribe"
 )
 
 type IMessageService interface {
 	SendWechatMessage(ctx context.Context, req *sts.SendWechatMessageReq) (*sts.SendWechatMessageResp, error)
+	GenerateUrlLink(ctx context.Context, req *sts.GenerateUrlLinkReq) (*sts.GenerateUrlLinkResp, error)
 }
 
 type MessageService struct {
@@ -35,7 +42,6 @@ func (s *MessageService) SendWechatMessage(ctx context.Context, req *sts.SendWec
 
 	user, err := s.UserMapper.FindOne(ctx, req.UserId)
 	if err != nil {
-		log.Error("SendWechatMessage: 查找用户失败, userId=%s, err=%v", req.UserId, err)
 		return nil, consts.ErrNoSuchUser
 	}
 
@@ -51,13 +57,11 @@ func (s *MessageService) SendWechatMessage(ctx context.Context, req *sts.SendWec
 	}
 
 	if openId == "" {
-		log.Error("SendWechatMessage: 用户未绑定微信, userId=%s", req.UserId)
 		return nil, consts.ErrOpenIdNotFind
 	}
 
 	miniProgram := s.MiniProgramMap[appId]
 	if miniProgram == nil {
-		log.Error("SendWechatMessage: 未找到对应的小程序配置, appId=%s, 可用的appId列表: %v", appId, s.getAvailableAppIds())
 		return nil, consts.ErrNotFound
 	}
 
@@ -85,15 +89,12 @@ func (s *MessageService) SendWechatMessage(ctx context.Context, req *sts.SendWec
 
 	err = miniProgram.Send(ctx, message)
 	if err != nil {
-		log.Error("SendWechatMessage: 发送订阅消息失败, openId=%s, templateId=%s, err=%v", openId, req.TemplateId, err)
 		return nil, consts.ErrWrongWechatCode
 	}
 
-	log.Info("SendWechatMessage: 发送订阅消息成功, userId=%s, openId=%s, templateId=%s", req.UserId, openId, req.TemplateId)
 	return nil, nil
 }
 
-// getAvailableAppIds 获取可用的AppID列表，用于调试
 func (s *MessageService) getAvailableAppIds() []string {
 	var appIds []string
 	for appId := range s.MiniProgramMap {
@@ -102,27 +103,87 @@ func (s *MessageService) getAvailableAppIds() []string {
 	return appIds
 }
 
-// parseWechatError 解析微信错误码，返回友好的错误信息
-func (s *MessageService) parseWechatError(errStr string) string {
-	if strings.Contains(errStr, "43101") {
-		return "用户未订阅该消息模板，请引导用户在小程序中订阅消息"
-	}
-	if strings.Contains(errStr, "43104") {
-		return "模板参数不正确，请检查模板参数是否与微信公众平台配置一致"
-	}
-	if strings.Contains(errStr, "47003") {
-		return "模板参数值长度过长，请缩短参数内容"
-	}
-	if strings.Contains(errStr, "41030") {
-		return "页面路径不正确，请检查page参数"
-	}
-	if strings.Contains(errStr, "40037") {
-		return "模板ID不正确，请检查templateId参数"
-	}
-	if strings.Contains(errStr, "45009") {
-		return "接口调用超过限额，请稍后再试"
+func (s *MessageService) GenerateUrlLink(ctx context.Context, req *sts.GenerateUrlLinkReq) (*sts.GenerateUrlLinkResp, error) {
+	accessToken, err := s.getAccessToken(ctx, req.AppId)
+	if err != nil {
+		return nil, err
 	}
 
-	// 默认返回原始错误信息
-	return fmt.Sprintf("发送消息失败: %s", errStr)
+	requestBody := map[string]any{
+		"expire_type":     1,
+		"expire_interval": 30,
+	}
+
+	if req.Path != nil {
+		requestBody["path"] = *req.Path
+	}
+	if req.Query != nil {
+		requestBody["query"] = *req.Query
+	}
+	if req.MiniProgramState != nil {
+		requestBody["env_version"] = *req.MiniProgramState
+	}
+
+	bodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, err
+	}
+
+	apiURL := fmt.Sprintf("https://api.weixin.qq.com/wxa/generate_urllink?access_token=%s", accessToken)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(string(bodyBytes)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	httpResp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var wechatResp map[string]interface{}
+	if err := json.Unmarshal(respBody, &wechatResp); err != nil {
+		return nil, err
+	}
+	if errCode, ok := wechatResp["errcode"].(float64); ok && errCode != 0 {
+		errMsg := wechatResp["errmsg"].(string)
+		return nil, fmt.Errorf("微信API错误: %s (错误码: %v)", errMsg, errCode)
+	}
+
+	urlLink, ok := wechatResp["url_link"].(string)
+	if !ok {
+		return nil, fmt.Errorf("响应格式错误")
+	}
+
+	return &sts.GenerateUrlLinkResp{
+		UrlLink: urlLink,
+	}, nil
+}
+
+func (s *MessageService) getAccessToken(ctx context.Context, appId string) (string, error) {
+	var accessToken string
+	for _, conf := range s.Config.WechatApplicationConfigs {
+		if appId == conf.AppID {
+			res, err := util.HTTPGet(ctx, fmt.Sprintf(consts.WXAccessTokenUrl, conf.AppID, conf.AppSecret))
+			if err != nil {
+				return "", err
+			}
+			tokenRes := make(map[string]any)
+			if err = sonic.Unmarshal(res, &tokenRes); err != nil {
+				return "", err
+			}
+			if accessToken = tokenRes["access_token"].(string); accessToken == "" {
+				return "", consts.ErrGetToken
+			}
+			break
+		}
+	}
+	return accessToken, nil
 }

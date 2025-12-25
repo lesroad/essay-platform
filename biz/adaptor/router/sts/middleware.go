@@ -60,3 +60,18 @@ func _signupMw() []app.HandlerFunc {
 	// your code...
 	return nil
 }
+
+func _payMw() []app.HandlerFunc {
+	// your code...
+	return nil
+}
+
+func _createorderMw() []app.HandlerFunc {
+	// your code...
+	return nil
+}
+
+func _generateurllinkMw() []app.HandlerFunc {
+	// your code...
+	return nil
+}

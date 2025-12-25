@@ -26,13 +26,11 @@ func NewProvider() (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	urlMapper := mapper.NewUrlMapper(configConfig)
 	userMapper := mapper.NewUserMapper(configConfig)
 	miniProgramMap := wechat.NewWechatApplicationMap(configConfig)
 	cosService := service.CosService{
 		Config:         configConfig,
 		CosSDK:         cosSDK,
-		UrlMapper:      urlMapper,
 		UserMapper:     userMapper,
 		MiniProgramMap: miniProgramMap,
 	}
@@ -48,11 +46,18 @@ func NewProvider() (*Provider, error) {
 		UserMapper:     userMapper,
 		MiniProgramMap: miniProgramMap,
 	}
+	payMapper := mapper.NewPayMapper(configConfig)
+	payService := service.PayService{
+		Config:     configConfig,
+		UserMapper: userMapper,
+		PayMapper:  payMapper,
+	}
 	providerProvider := &Provider{
 		Config:         configConfig,
 		CosService:     cosService,
 		AuthService:    authenticationService,
 		MessageService: messageService,
+		PayService:     payService,
 	}
 	return providerProvider, nil
 }

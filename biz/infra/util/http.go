@@ -63,3 +63,41 @@ func HTTPPost(ctx context.Context, rawURL string, body io.Reader) ([]byte, error
 	}
 	return io.ReadAll(response.Body)
 }
+
+func HTTPPostWithHeaders(ctx context.Context, rawURL string, headers map[string]string, body io.Reader) ([]byte, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := parsedURL.Scheme + "://" + parsedURL.Host + parsedURL.Path
+	ctx, span := trace.TracerFromContext(ctx).Start(ctx, fmt.Sprintf("http/%s", baseURL), oteltrace.WithTimestamp(time.Now()), oteltrace.WithSpanKind(oteltrace.SpanKindClient))
+	defer func() {
+		span.End(oteltrace.WithTimestamp(time.Now()))
+	}()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, body)
+	if err != nil {
+		return nil, err
+	}
+
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	respBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if response.StatusCode != http.StatusOK {
+		return respBody, fmt.Errorf("http post error : rawURL=%v , statusCode=%v", rawURL, response.StatusCode)
+	}
+
+	return respBody, nil
+}

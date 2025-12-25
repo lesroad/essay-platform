@@ -139,3 +139,19 @@ func SignUp(ctx context.Context, c *app.RequestContext) {
 	resp, err := p.AuthService.SignUp(ctx, &req)
 	adaptor.PostProcess(ctx, c, &req, resp, err)
 }
+
+// GenerateUrlLink .
+// @router /sts/generate_url_link [POST]
+func GenerateUrlLink(ctx context.Context, c *app.RequestContext) {
+	var err error
+	var req sts.GenerateUrlLinkReq
+	err = c.BindAndValidate(&req)
+	if err != nil {
+		c.String(consts.StatusBadRequest, err.Error())
+		return
+	}
+
+	p := provider.Get()
+	resp, err := p.MessageService.GenerateUrlLink(ctx, &req)
+	adaptor.PostProcess(ctx, c, &req, resp, err)
+}

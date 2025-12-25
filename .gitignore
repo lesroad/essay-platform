@@ -1,3 +1,9 @@
 *.local.yaml
 *.yaml
 *.yml
+/essay-platform
+*.exe
+*.out
+*.test
+/bin/
+/dist/

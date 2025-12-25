@@ -18,10 +18,15 @@ func Register(r *server.Hertz) {
 
 	root := r.Group("/", rootMw()...)
 	{
+		_pay := root.Group("/pay", _payMw()...)
+		_pay.POST("/create_order", append(_createorderMw(), sts.CreateOrder)...)
+	}
+	{
 		_sts := root.Group("/sts", _stsMw()...)
 		_sts.POST("/add_auth", append(_addauthMw(), sts.AddAuth)...)
 		_sts.POST("/gen_cos_sts", append(_gencosstsMw(), sts.GenCosSts)...)
 		_sts.POST("/gen_signed_url", append(_gensignedurlMw(), sts.GenSignedUrl)...)
+		_sts.POST("/generate_url_link", append(_generateurllinkMw(), sts.GenerateUrlLink)...)
 		_sts.POST("/send_verify_code", append(_sendverifycodeMw(), sts.SendVerifyCode)...)
 		_sts.POST("/send_wechat_message", append(_sendwechatmessageMw(), sts.SendWechatMessage)...)
 		_sts.POST("/set_password", append(_setpasswordMw(), sts.SetPassword)...)

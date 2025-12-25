@@ -24,7 +24,6 @@ type ICosService interface {
 type CosService struct {
 	Config         *config.Config
 	CosSDK         *cos.CosSDK
-	UrlMapper      mapper.UrlMapper
 	UserMapper     *mapper.UserMapper
 	MiniProgramMap wechat.MiniProgramMap
 }

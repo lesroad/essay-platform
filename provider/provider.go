@@ -16,6 +16,7 @@ type Provider struct {
 	CosService     service.CosService
 	AuthService    service.AuthenticationService
 	MessageService service.MessageService
+	PayService     service.PayService
 }
 
 var provider *Provider
@@ -41,13 +42,14 @@ var ApplicationSet = wire.NewSet(
 	service.CosSet,
 	service.AuthenticationSet,
 	service.MessageSet,
+	service.PaySet,
 )
 
 var InfrastructureSet = wire.NewSet(
 	config.NewConfig,
 	redis.NewRedis,
-	mapper.NewUrlMapper,
 	mapper.NewUserMapper,
+	mapper.NewPayMapper,
 	cos.NewCosSDK,
 	wechat.NewWechatApplicationMap,
 )

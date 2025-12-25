@@ -21,7 +21,6 @@ type UserMapper struct {
 	conn *monc.Model
 }
 
-// NewUserMapper returns a mapper for the mongo.
 func NewUserMapper(config *config.Config) *UserMapper {
 	conn := monc.MustNewModel(config.Mongo.URL, config.Mongo.DB, UserCollectionName, config.CacheConf)
 	return &UserMapper{
@@ -61,8 +60,6 @@ func (m *UserMapper) FindOne(ctx context.Context, id string) (*db.User, error) {
 	}
 
 	var data db.User
-	//key := prefixUserCacheKey + id
-	//err = m.conn.FindOne(ctx, key, &data, bson.M{"_id": oid})
 	err = m.conn.FindOneNoCache(ctx, &data, bson.M{"_id": oid})
 	switch err {
 	case nil:

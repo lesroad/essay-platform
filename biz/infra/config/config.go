@@ -36,6 +36,7 @@ type Config struct {
 	CosConfig                *CosConfig
 	CacheConf                cache.CacheConf
 	WechatApplicationConfigs []*WechatApplicationConfig
+	WechatPayConfig          *WechatPayConfig
 	Redis                    *redis.RedisConf
 	WeChatRedis              *redis.RedisConf
 	SMTP                     *struct {
@@ -72,6 +73,14 @@ type WechatApplicationConfig struct {
 	AppID     string
 	AppSecret string
 	Type      string
+}
+
+type WechatPayConfig struct {
+	MchId             string
+	NotifyURL         string
+	PayURL            string
+	ApiclientKey      string
+	ApiclientSerialNo string
 }
 
 func NewConfig() (*Config, error) {

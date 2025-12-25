@@ -1,8 +1,6 @@
 *.local.yaml
 *.yaml
 *.yml
-
-# build artifacts / binaries
 /essay-platform
 *.exe
 *.out

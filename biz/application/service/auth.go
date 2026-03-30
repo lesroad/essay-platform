@@ -62,8 +62,6 @@ func (s *AuthenticationService) AddAuth(ctx context.Context, req *sts.AddAuthReq
 	case nil:
 		var err error
 		switch req.AuthType {
-		case consts.AuthTypeWechatPhone:
-			resp.Options, err = s.BindWechatPhone(ctx, req, user)
 		case consts.AuthTypeWechatOpenId:
 			resp.Options, err = s.BindWechatOpenId(ctx, req, user)
 		default:
@@ -89,7 +87,8 @@ func (s *AuthenticationService) SignIn(ctx context.Context, req *sts.SignInReq) 
 	case consts.AuthTypeWechatOpenId:
 		fallthrough
 	case consts.AuthTypeWechatUnionId:
-		resp.UserId, resp.UnionId, resp.OpenId, resp.AppId, err = s.signInByWechat(ctx, req)
+		return nil, consts.ErrInvalidArgument
+		//resp.UserId, resp.UnionId, resp.OpenId, resp.AppId, err = s.signInByWechat(ctx, req)
 	case consts.AuthTypeWechatPhone:
 		resp.UserId, resp.Options, resp.AppId, err = s.SignInByWechatPhone(ctx, req) // 通过code获得的phone存在openId字段
 	case consts.AuthTypeWebPhone:
@@ -248,75 +247,6 @@ func (s *AuthenticationService) SignInByWechatPhone(ctx context.Context, req *st
 	default:
 		return "", &phone, appId, err
 	}
-}
-
-func (s *AuthenticationService) BindWechatPhone(ctx context.Context, req *sts.AddAuthReq, user *db.User) (*string, error) {
-	code := req.GetVerifyCode()
-	var accessToken string
-	for _, conf := range s.Config.WechatApplicationConfigs {
-		if req.AuthId == conf.AppID {
-			res, err := util.HTTPGet(ctx, fmt.Sprintf(consts.WXAccessTokenUrl, conf.AppID, conf.AppSecret))
-			if err != nil {
-				return nil, err
-			}
-			tokenRes := make(map[string]any)
-			if err = sonic.Unmarshal(res, &tokenRes); err != nil {
-				return nil, err
-			}
-			if accessToken = tokenRes["access_token"].(string); accessToken == "" {
-				return nil, consts.ErrGetToken
-			}
-			break
-		}
-	}
-
-	bodyString := fmt.Sprintf(`{"code":"%s"}`, code)
-	body := strings.NewReader(bodyString)
-	res, err := util.HTTPPost(ctx, fmt.Sprintf(consts.WXUserPhoneUrl, accessToken), body)
-	if err != nil {
-		log.Error("BindWechatPhone err:%+v", err)
-		return nil, err
-	}
-
-	var phoneRes map[string]any
-	if err = sonic.Unmarshal(res, &phoneRes); err != nil {
-		return nil, err
-	} else if phoneRes["errcode"].(float64) != 0 {
-		log.Error("BindWechatPhone err:%+v", phoneRes)
-		return nil, errors.New(phoneRes["errmsg"].(string))
-	}
-	phoneInfo, ok := phoneRes["phone_info"].(map[string]any)
-	if !ok {
-		return nil, errors.New("phone_info 类型断言失败")
-	}
-	phone := phoneInfo["phoneNumber"].(string)
-
-	// 判断是否已经绑定过手机号，如果绑定过则更新手机号，未绑定过则添加手机号
-	auth := &db.Auth{
-		Type:  consts.AuthTypePhone,
-		Value: phone,
-	}
-	_, find := lo.Find(user.Auth, func(item *db.Auth) bool {
-		return *item == *auth
-	})
-	if find {
-		return &phone, nil
-	}
-	_, find = lo.Find(user.Auth, func(item *db.Auth) bool {
-		if item.Type == consts.AuthTypeWechatPhone {
-			item.Value = phone
-			return true
-		}
-		return false
-	})
-	if !find {
-		user.Auth = append(user.Auth, auth)
-	}
-	err = s.UserMapper.Update(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-	return &phone, nil
 }
 
 func (s *AuthenticationService) SignInByWebPhone(ctx context.Context, req *sts.SignInReq) (string, *string, string, error) {
